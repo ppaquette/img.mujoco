@@ -32,7 +32,8 @@ if [ -d "$HOME/.mujoco/mjpro150" ]; then
 		exit 1
 	fi
 fi
-ln -s /work_dir/mujoco/mjpro150 $HOME/.mujoco/mjpro150
+rm -f "$HOME/.mujoco/mjpro150"
+ln -s /work_dir/deps/mujoco/mjpro150 $HOME/.mujoco/mjpro150
 
 # 1. Cloning repo
 cd /work_dir
@@ -58,7 +59,7 @@ fi
 export HOME="${HOME:-/work_dir}"
 export CUDA_HOME=/usr/local/cuda
 export CUDA_ROOT=$CUDA_HOME
-export LD_LIBRARY_PATH=/work_dir/mujoco/mjpro150/bin:/usr/local/nvidia/lib64:$CUDA_HOME/lib64:$CUDA_HOME/extras/CUPTI/lib64:/usr/local/lib:/usr/lib64:${LD_LIBRARY_PATH}
+export LD_LIBRARY_PATH=/work_dir/deps/mujoco/mjpro150/bin:/usr/local/nvidia/lib64:$CUDA_HOME/lib64:$CUDA_HOME/extras/CUPTI/lib64:/usr/local/lib:/usr/lib64:${LD_LIBRARY_PATH}
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/.mujoco/mjpro150/bin
 export PATH=/work_dir/env/bin:$PATH
 export PYTHONIOENCODING=utf-8
@@ -72,7 +73,7 @@ AUTHOR pcpaquette@gmail.com
 %post
 export DEBIAN_FRONTEND=noninteractive
 export LANG=C.UTF-8
-export LD_LIBRARY_PATH=/work_dir/mujoco/mjpro150/bin:/usr/local/nvidia/lib64:$CUDA_HOME/lib64:$CUDA_HOME/extras/CUPTI/lib64:/usr/local/lib:/usr/lib64:${LD_LIBRARY_PATH}
+export LD_LIBRARY_PATH=/work_dir/deps/mujoco/mjpro150/bin:/usr/local/nvidia/lib64:$CUDA_HOME/lib64:$CUDA_HOME/extras/CUPTI/lib64:/usr/local/lib:/usr/lib64:${LD_LIBRARY_PATH}
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/.mujoco/mjpro150/bin
 
 # --- Creating empty mount points ---
@@ -107,15 +108,16 @@ rm miniconda.sh
 
 # --- Installing mujoco 1.50 ---
 apt-get -y install libgl1-mesa-dev libgl1-mesa-glx libosmesa6-dev xpra xserver-xorg-dev
-mkdir -p /work_dir/mujoco
+mkdir -p /work_dir/deps/mujoco
+cd /work_dir/deps
 wget https://www.roboti.us/download/mjpro150_linux.zip -O mujoco.zip
-unzip mujoco.zip -d /work_dir/mujoco
+unzip mujoco.zip -d /work_dir/deps/mujoco
 rm mujoco.zip
 wget -nv https://raw.githubusercontent.com/openai/mujoco-py/c5f60322467ec8ecc0db64c3e18a4da762c27e45/vendor/Xdummy -O /usr/local/bin/Xdummy
 chmod +x /usr/local/bin/Xdummy
 mkdir -p /usr/share/glvnd/egl_vendor.d/
 wget -nv https://raw.githubusercontent.com/openai/mujoco-py/c5f60322467ec8ecc0db64c3e18a4da762c27e45/vendor/10_nvidia.json -O /usr/share/glvnd/egl_vendor.d/10_nvidia.json
-cd /work_dir/mujoco/mjpro150/bin
+cd /work_dir/deps/mujoco/mjpro150/bin
 cp *.so /usr/local/lib/
 cd /work_dir
 
@@ -130,7 +132,18 @@ cd ..
 rm -Rf patchelf-0.9/
 rm patchelf-0.9.tar.gz
 
+# --- Installing GLFW ---
+apt-get install -y cmake xorg-dev libglu1-mesa-dev
+cd /work_dir/deps
+git clone https://github.com/glfw/glfw.git
+cd glfw
+git checkout 8d3595fb4d4d919e27e1a755095ae1ffae5f50be
+cmake -DBUILD_SHARED_LIBS=ON .
+make
+make install
+
 # --- Installing mujoco-py ---
+cd /work_dir/deps
 git clone https://github.com/openai/mujoco-py.git
 cd mujoco-py
 pip install -r requirements.txt
@@ -138,15 +151,36 @@ python setup.py build install
 cd ..
 
 # --- Installing control-suite ---
-apt-get -y install libglew-dev libglfw3-dev
+cd /work_dir/deps
 git clone https://github.com/deepmind/dm_control.git
 cd dm_control
 pip install -r requirements.txt
-python setup.py install --headers-dir=/work_dir/mujoco/mjpro150/include/
+python setup.py install --headers-dir=/work_dir/deps/mujoco/mjpro150/include/
 cd ..
 
 # --- Installing entry point ---
-wget -nv https://raw.githubusercontent.com/openai/mujoco-py/c5f60322467ec8ecc0db64c3e18a4da762c27e45/vendor/Xdummy-entrypoint -O /work_dir/entry.sh
+cd /work_dir
+cat <<EOT > /work_dir/entry.sh
+#!/usr/bin/python
+import argparse
+import os
+import sys
+import subprocess
+
+parser = argparse.ArgumentParser()
+args, extra_args = parser.parse_known_args()
+subprocess.Popen(["nohup", "Xdummy", ":15"], stdout=open('/dev/null', 'w'), stderr=open('/dev/null', 'w'))
+os.environ['DISPLAY'] = ':15'
+if not extra_args:
+    sys.argv = ['/bin/bash']
+else:
+    sys.argv = extra_args
+# Explicitly flush right before the exec since otherwise things might get
+# lost in Python's buffers around stdout/stderr (!).
+sys.stdout.flush()
+sys.stderr.flush()
+os.execvpe(sys.argv[0], sys.argv, os.environ)
+EOT
 chmod +x /work_dir/entry.sh
 
 # --- Cleaning up ---
