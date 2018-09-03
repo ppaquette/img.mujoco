@@ -77,11 +77,13 @@ export LD_LIBRARY_PATH=/work_dir/deps/mujoco/mjpro150/bin:/usr/local/nvidia/lib6
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/.mujoco/mjpro150/bin
 
 # --- Creating empty mount points ---
-mkdir -p /scratch /home /u /data /Tmp /project /work_dir
+mkdir -p /scratch /home /u /data /Tmp /project /work_dir /cvmfs /localscratch
 
 # --- Installing utilities ---
 apt-get -y update
 apt-get -y install git wget curl nano vim emacs locales pkg-config software-properties-common zip net-tools unzip virtualenv
+mkdir -p /etc/pki/tls
+ln -s /etc/ssl/certs /etc/pki/tls/certs
 
 # --- Install CUDA 9.0.176 ---
 wget -nv http://developer.download.nvidia.com/compute/cuda/repos/ubuntu1604/x86_64/cuda-repo-ubuntu1604_9.0.176-1_amd64.deb
@@ -133,7 +135,7 @@ rm -Rf patchelf-0.9/
 rm patchelf-0.9.tar.gz
 
 # --- Installing GLFW ---
-apt-get install -y cmake xorg-dev libglu1-mesa-dev
+apt-get install -y cmake xorg-dev libglu1-mesa-dev xvfb
 cd /work_dir/deps
 git clone https://github.com/glfw/glfw.git
 cd glfw
